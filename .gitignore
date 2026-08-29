@@ -1,0 +1,22 @@
+# Build outputs
+bin/
+build_dir/
+dl/
+feeds/
+logs/
+staging_dir/
+tmp/
+
+# Config backups
+*.bak
+*.old
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
