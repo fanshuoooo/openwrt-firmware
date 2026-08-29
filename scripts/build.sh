@@ -16,7 +16,7 @@ STEP_FAIL() {
 }
 
 echo "=============================================="
-echo "  [1/7] Installing build dependencies"
+echo "  [1/8] Installing build dependencies"
 echo "=============================================="
 sudo apt-get update -y || STEP_FAIL "apt-get update"
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
@@ -28,7 +28,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
 sudo timedatectl set-timezone Asia/Shanghai
 
 echo "=============================================="
-echo "  [2/7] Cloning ImmortalWrt (openwrt-24.10)"
+echo "  [2/8] Cloning ImmortalWrt (openwrt-24.10)"
 echo "=============================================="
 cd "$GITHUB_WORKSPACE" || STEP_FAIL "workspace"
 rm -rf immortalwrt
@@ -38,27 +38,43 @@ git clone --depth 1 -b openwrt-24.10 https://github.com/immortalwrt/immortalwrt.
 cd immortalwrt || STEP_FAIL "cd immortalwrt"
 
 echo "=============================================="
-echo "  [3/7] Adding package feeds"
+echo "  [3/8] Adding package feeds"
 echo "=============================================="
 sed -i '1i src-git kenzo https://github.com/kenzok8/openwrt-packages' feeds.conf.default
 sed -i '2i src-git small https://github.com/kenzok8/small' feeds.conf.default
 cat feeds.conf.default
 
 echo "=============================================="
-echo "  [4/7] Applying source customizations"
+echo "  [4/8] Applying source customizations"
 echo "=============================================="
 if [ -f ../scripts/custom.sh ]; then
   bash ../scripts/custom.sh || STEP_FAIL "custom.sh"
 fi
 
 echo "=============================================="
-echo "  [5/7] Updating and installing feeds"
+echo "  [5/8] Updating and installing feeds"
 echo "=============================================="
 ./scripts/feeds update -a || STEP_FAIL "feeds update"
 ./scripts/feeds install -a || STEP_FAIL "feeds install"
 
 echo "=============================================="
-echo "  [6/7] Loading configuration"
+echo "  [6/8] Upgrading Go toolchain to 1.27"
+echo "=============================================="
+# 24.10 feed ships Go 1.23, but kenzok8/small's xray-core needs Go 1.26
+# and sing-box needs Go 1.24.7. Replace lang/golang with the master
+# branch version (Go 1.27) which satisfies both.
+cd "$GITHUB_WORKSPACE" || STEP_FAIL "workspace"
+curl -sL https://github.com/immortalwrt/packages/archive/refs/heads/master.tar.gz -o packages-master.tar.gz \
+  || STEP_FAIL "download packages master"
+tar -xzf packages-master.tar.gz packages-master/lang/golang || STEP_FAIL "extract golang"
+rm -rf immortalwrt/feeds/packages/lang/golang
+cp -r packages-master/lang/golang immortalwrt/feeds/packages/lang/golang || STEP_FAIL "replace golang"
+rm -rf packages-master packages-master.tar.gz
+cd immortalwrt || STEP_FAIL "cd immortalwrt"
+grep -r 'GO_DEFAULT_VERSION' feeds/packages/lang/golang/golang-values.mk || true
+
+echo "=============================================="
+echo "  [7/8] Loading configuration"
 echo "=============================================="
 cp ../config/.config .config || STEP_FAIL "copy .config"
 mkdir -p files
@@ -70,8 +86,10 @@ find dl -size -1024c -exec ls -l {} \;
 find dl -size -1024c -exec rm -f {} \;
 
 echo "=============================================="
-echo "  [7/7] Compiling firmware"
+echo "  [8/8] Compiling firmware"
 echo "=============================================="
+# Pre-build tcping single-threaded: it flakily fails under parallel make
+make -j1 package/feeds/small/tcping/compile 2>/dev/null || true
 echo "Using $(nproc) threads"
 make -j"$(nproc)" || make -j1 || make -j1 V=s || STEP_FAIL "make"
 
