@@ -16,20 +16,17 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
+    - name: Setup environment
       run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 python2.7 unzip zlib1g-dev lib32gcc1 libc6-dev-i386 subversion flex uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev texinfo libglib2.0-dev xmlto qemu-utils upx libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib antlr3 gperf wget curl swig rsync
-        sudo apt-get install -y libelf1:i386 libstdc++6:i386
+        sudo apt-get update -y
+        sudo apt-get install -y build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 unzip zlib1g-dev subversion flex gcc-multilib p7zip p7zip-full libssl-dev texinfo libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib gperf wget curl swig rsync
         sudo timedatectl set-timezone "$TZ"
 
     - name: Clone source code
       run: |
         git clone $REPO_URL -b $REPO_BRANCH immortalwrt --depth 1
 
-    - name: Update and Install feeds
+    - name: Update feeds
       working-directory: ./immortalwrt
       run: |
         echo "src-git kenzok8 https://github.com/kenzok8/openwrt-packages.git" >> feeds.conf.default
@@ -37,49 +34,32 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Load custom configuration
+    - name: Load configuration
       run: |
         [ -e config ] && cp -r config/ immortalwrt/files
         [ -e config/.config ] && cp config/.config immortalwrt/.config
         chmod +x scripts/custom.sh
         cp scripts/custom.sh immortalwrt/custom.sh
 
-    - name: Download package
-      id: package
+    - name: Download
       run: |
         cd immortalwrt
         make defconfig
         make download -j8
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
 
-    - name: Compile the firmware
+    - name: Compile
       id: compile
       run: |
         cd immortalwrt
-        echo "$((nproc)) thread compile"
         make -j$((nproc)) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-    - name: Check space usage
-      if: (!cancelled())
-      run: df -hT
-
-    - name: Organize files
-      id: organize
-      if: steps.compile.outputs.status == 'success' && !cancelled()
-      run: |
-        cd immortalwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: Upload firmware directory
+    - name: Upload
       uses: actions/upload-artifact@v4
-      if: steps.organize.outputs.status == 'success' && !cancelled()
+      if: steps.compile.outputs.status == 'success'
       with:
         name: ImmortalWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE }}
+        path: immortalwrt/bin/targets/*/*/*.bin
