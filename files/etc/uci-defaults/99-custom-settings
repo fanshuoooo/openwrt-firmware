@@ -1,0 +1,59 @@
+#!/bin/sh
+#
+# First-boot customization for Sakura-Router (runs once via /etc/uci-defaults)
+# Applied AFTER /sbin/wifi config generates wireless config.
+#
+
+# ================= System =================
+uci -q set system.@system[0].hostname='Sakura-Router'
+uci -q set system.@system[0].timezone='CST-8'
+uci -q set system.@system[0].zonename='Asia/Shanghai'
+uci -q commit system
+
+# ================= LAN =================
+uci -q set network.lan.ipaddr='192.168.7.1'
+uci -q commit network
+
+# ================= LuCI =================
+uci -q set luci.main.lang='zh_cn'
+uci -q set luci.main.mediaurlbase='/luci-static/argon'
+uci -q commit luci
+
+# ================= Wireless =================
+# Match radios by band (robust against radio ordering / device path).
+# 2.4G -> SSID "Sakura", 5G -> SSID "Sakura-5G", both PSK2 key 1133224455
+if [ -f /etc/config/wireless ]; then
+	for iface in $(uci show wireless 2>/dev/null | grep '=wifi-iface' | cut -d. -f2); do
+		dev=$(uci -q get "wireless.$iface.device")
+		[ -z "$dev" ] && continue
+		band=$(uci -q get "wireless.$dev.band")
+		uci -q set "wireless.$dev.disabled"='0'
+		uci -q set "wireless.$dev.country"='CN'
+		case "$band" in
+			2g)
+				uci -q set "wireless.$iface.ssid"='Sakura'
+				uci -q set "wireless.$iface.encryption"='psk2'
+				uci -q set "wireless.$iface.key"='1133224455'
+				uci -q set "wireless.$iface.disabled"='0'
+				;;
+			5g)
+				uci -q set "wireless.$iface.ssid"='Sakura-5G'
+				uci -q set "wireless.$iface.encryption"='psk2'
+				uci -q set "wireless.$iface.key"='1133224455'
+				uci -q set "wireless.$iface.disabled"='0'
+				;;
+		esac
+	done
+	uci -q commit wireless
+fi
+
+# ================= Firewall: enable flow offloading =================
+uci -q set firewall.@defaults[0].flow_offloading='1'
+uci -q commit firewall
+
+# ================= Enable services =================
+[ -x /etc/init.d/frpc ] && /etc/init.d/frpc enable
+[ -x /etc/init.d/ttyd ] && /etc/init.d/ttyd enable
+[ -x /etc/init.d/smartdns ] && /etc/init.d/smartdns enable
+
+exit 0
