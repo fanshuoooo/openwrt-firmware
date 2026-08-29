@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
 
 env:
-  REPO_URL: https://github.com/immortalwrt/immortalwrt.git
-  REPO_BRANCH: openwrt-18.06-k5.4
   TZ: Asia/Shanghai
 
 jobs:
@@ -13,53 +11,34 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Setup environment
-      run: |
-        sudo apt-get update -y
-        sudo apt-get install -y build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch python3 unzip zlib1g-dev subversion flex gcc-multilib p7zip p7zip-full libssl-dev texinfo libelf-dev autoconf automake libtool autopoint device-tree-compiler g++-multilib gperf wget curl swig rsync
-        sudo timedatectl set-timezone "$TZ"
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          sudo apt-get clean
+          df -hT
 
-    - name: Clone source code
-      run: |
-        git clone $REPO_URL -b $REPO_BRANCH immortalwrt --depth 1
+      - name: Build firmware
+        run: |
+          chmod +x scripts/build.sh
+          ./scripts/build.sh
 
-    - name: Update feeds
-      working-directory: ./immortalwrt
-      run: |
-        echo "src-git kenzok8 https://github.com/kenzok8/openwrt-packages.git" >> feeds.conf.default
-        echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall" >> feeds.conf.default
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: ImmortalWrt_CR6608_firmware
+          path: |
+            immortalwrt/bin/targets/*/*/*.bin
+            immortalwrt/bin/targets/*/*/*.map
 
-    - name: Load configuration
-      run: |
-        [ -e config ] && cp -r config/ immortalwrt/files
-        [ -e config/.config ] && cp config/.config immortalwrt/.config
-        chmod +x scripts/custom.sh
-        cp scripts/custom.sh immortalwrt/custom.sh
-
-    - name: Download
-      run: |
-        cd immortalwrt
-        make defconfig
-        make download -j8
-
-    - name: Compile
-      id: compile
-      run: |
-        cd immortalwrt
-        make -j$((nproc)) || make -j1 || make -j1 V=s
-        echo "status=success" >> $GITHUB_OUTPUT
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-
-    - name: Upload
-      uses: actions/upload-artifact@v4
-      if: steps.compile.outputs.status == 'success'
-      with:
-        name: ImmortalWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: immortalwrt/bin/targets/*/*/*.bin
+      - name: Upload build log on failure
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: |
+            immortalwrt/.config
+            immortalwrt/logs/
