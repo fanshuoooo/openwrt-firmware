@@ -1,0 +1,1 @@
+0 4 * * * for i in $(uci show passwall 2>/dev/null | grep '=subscribe_list' | cut -d. -f2); do lua /usr/share/passwall/subscribe.lua start $i >/dev/null 2>&1 & done
