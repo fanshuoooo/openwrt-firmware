@@ -1,0 +1,8 @@
+# Put your custom commands here that should be executed once
+# the system init finished. By default this file does nothing.
+
+# v2 fix: pre-create miniupnpd lease file (/var is tmpfs, so do this on
+# every boot) to suppress the "cannot open /var/upnp.leases" startup error.
+touch /var/upnp.leases
+
+exit 0
