@@ -73,6 +73,18 @@ rm -rf packages-master packages-master.tar.gz
 cd immortalwrt || STEP_FAIL "cd immortalwrt"
 grep -r 'GO_DEFAULT_VERSION' feeds/packages/lang/golang/golang-values.mk || true
 
+# The master golang package cannot really build under 24.10 (its versioned
+# package scheme is incompatible: 'golang1.27/host does not exist'), so the
+# build silently falls back to the runner's old system Go. Install an official
+# prebuilt Go binary into the exact PATH slot golang-build.sh uses.
+GOVER=$(curl -sL 'https://go.dev/dl/?mode=json' | sed -n 's/.*"version"[^"]*"\(go[0-9][0-9.]*\)".*/\1/p' | head -n1)
+[ -n "$GOVER" ] || GOVER=go1.27.0
+echo "Installing official Go: $GOVER"
+curl -sL "https://dl.google.com/go/${GOVER}.linux-amd64.tar.gz" -o /tmp/go-official.tgz || STEP_FAIL "download official go"
+mkdir -p staging_dir/hostpkg/lib/go-1.27
+tar -xzf /tmp/go-official.tgz -C staging_dir/hostpkg/lib/go-1.27 --strip-components=1 || STEP_FAIL "extract official go"
+staging_dir/hostpkg/lib/go-1.27/bin/go version || STEP_FAIL "official go broken"
+
 # sing-box full variant hardcodes with_tailscale; the tailscale fork pinned by
 # kenzok8 fails to compile (reflect.TypeAssert). Drop tailscale - it is an
 # optional outbound, core proxy features are unaffected.
