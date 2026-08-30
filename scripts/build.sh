@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 # ImmortalWrt 24.10 firmware build script for Xiaomi Mi Router CR6608
+# *** CLONE build: replica of the live 18.06 router (snapshot 2026-08-30) ***
 # Target: ramips/mt7621, WiFi: MT7915E (mac80211 upstream driver)
 # Feeds: kenzok8/openwrt-packages + kenzok8/small
 #
@@ -58,7 +59,7 @@ echo "=============================================="
 ./scripts/feeds install -a || STEP_FAIL "feeds install"
 
 echo "=============================================="
-echo "  [6/8] Upgrading Go toolchain to 1.27"
+echo "  [6/8] Go toolchain + source patches"
 echo "=============================================="
 # 24.10 feed ships Go 1.23, but kenzok8/small's xray-core needs Go 1.26
 # and sing-box needs Go 1.24.7. Replace lang/golang with the master
@@ -91,6 +92,28 @@ staging_dir/hostpkg/lib/go-1.27/bin/go version || STEP_FAIL "official go broken"
 sed -i 's/,with_tailscale//' feeds/small/sing-box/Makefile || STEP_FAIL "patch sing-box tags"
 grep 'GO_PKG_TAGS' feeds/small/sing-box/Makefile || true
 
+# Delay dropbear until network init is done (avoids early-boot port bind
+# warnings). Force START=70 regardless of the original value.
+DROPBEAR_INIT=package/network/services/dropbear/files/dropbear.init
+if [ -f "$DROPBEAR_INIT" ]; then
+  sed -i 's/^START=[0-9]\+$/START=70/' "$DROPBEAR_INIT" || STEP_FAIL "patch dropbear init"
+  grep -n '^START=' "$DROPBEAR_INIT" || STEP_FAIL "dropbear START line missing"
+else
+  echo "WARN: $DROPBEAR_INIT not found, skipping dropbear patch"
+fi
+
+# CLONE: pin frp to 0.42.0. The live router runs frpc 0.42.0 against
+# linkv.top:5443 (verified ESTABLISHED). frp enforces client/server version
+# compatibility, and the 'user' option used by our config was removed in
+# newer frp releases. Pin to the exact live version.
+if [ -f feeds/packages/net/frp/Makefile ]; then
+  sed -i 's/^PKG_VERSION:=.*/PKG_VERSION:=0.42.0/' feeds/packages/net/frp/Makefile || STEP_FAIL "patch frp version"
+  sed -i 's/^PKG_HASH:=.*/PKG_HASH:=skip/' feeds/packages/net/frp/Makefile || STEP_FAIL "patch frp hash"
+  grep -n -E '^PKG_VERSION|^PKG_HASH' feeds/packages/net/frp/Makefile || STEP_FAIL "frp pin missing"
+else
+  echo "WARN: feeds/packages/net/frp/Makefile not found, skipping frp pin"
+fi
+
 echo "=============================================="
 echo "  [7/8] Loading configuration"
 echo "=============================================="
@@ -98,6 +121,7 @@ cp ../config/.config .config || STEP_FAIL "copy .config"
 mkdir -p files
 cp -r ../files/. files/ || STEP_FAIL "copy files"
 chmod +x files/etc/uci-defaults/* 2>/dev/null || true
+chmod +x files/etc/rc.local 2>/dev/null || true
 make defconfig || STEP_FAIL "make defconfig"
 make download -j8 || STEP_FAIL "make download"
 find dl -size -1024c -exec ls -l {} \;
