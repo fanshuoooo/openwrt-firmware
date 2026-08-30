@@ -8,6 +8,9 @@
 uci -q set system.@system[0].hostname='Sakura-Router'
 uci -q set system.@system[0].timezone='CST-8'
 uci -q set system.@system[0].zonename='Asia/Shanghai'
+# v2: log hygiene - kernel console loglevel -> notice(5), crond loglevel -> 5
+uci -q set system.@system[0].conloglevel='5'
+uci -q set system.@system[0].cronloglevel='5'
 uci -q commit system
 
 # ================= LAN =================
