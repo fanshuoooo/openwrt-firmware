@@ -73,6 +73,12 @@ rm -rf packages-master packages-master.tar.gz
 cd immortalwrt || STEP_FAIL "cd immortalwrt"
 grep -r 'GO_DEFAULT_VERSION' feeds/packages/lang/golang/golang-values.mk || true
 
+# sing-box full variant hardcodes with_tailscale; the tailscale fork pinned by
+# kenzok8 fails to compile (reflect.TypeAssert). Drop tailscale - it is an
+# optional outbound, core proxy features are unaffected.
+sed -i 's/,with_tailscale//' feeds/small/sing-box/Makefile || STEP_FAIL "patch sing-box tags"
+grep 'GO_PKG_TAGS' feeds/small/sing-box/Makefile || true
+
 echo "=============================================="
 echo "  [7/8] Loading configuration"
 echo "=============================================="
