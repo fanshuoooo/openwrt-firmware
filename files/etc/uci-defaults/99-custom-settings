@@ -30,9 +30,11 @@ fi
 uci -q set network.lan.ipaddr='192.168.7.1'
 uci -q commit network
 
-# ================= LuCI: zh_cn + design theme =================
+# ================= LuCI: zh_cn + bootstrap theme =================
+# NOTE: luci-theme-design crashes on 24.10 ucode LuCI (header template
+# indexes nil __entries). Use built-in bootstrap theme instead.
 uci -q set luci.main.lang='zh_cn'
-uci -q set luci.main.mediaurlbase='/luci-static/design'
+uci -q set luci.main.mediaurlbase='/luci-static/bootstrap'
 uci -q commit luci
 
 # ================= Wireless (Sakura / Sakura-5G, key 1133224455) =================
