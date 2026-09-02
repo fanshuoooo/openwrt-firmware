@@ -1,17 +1,18 @@
 #!/bin/sh
 #
-# CLONE first-boot customization (replica of live router snapshot 2026-08-30)
+# firmware4 first-boot customization (stable base for new CR6608 routers)
 # Runs once via /etc/uci-defaults, AFTER /sbin/wifi config generates wireless.
+# Design: clean base. frpc & passwall are installed but NOT started here -
+# they get enabled per-customer after flashing. First boot stays
+# deterministic: LAN 192.168.7.1 + WiFi up, nothing else touches traffic.
 #
 
 # ================= System =================
 uci -q set system.@system[0].hostname='Sakura-Router'
 uci -q set system.@system[0].timezone='CST-8'
 uci -q set system.@system[0].zonename='Asia/Shanghai'
-# log hygiene: notice level
 uci -q set system.@system[0].conloglevel='5'
 uci -q set system.@system[0].cronloglevel='5'
-# NTP servers (from live router)
 uci -q set system.ntp.enabled='1'
 for s in ntp.tencent.com ntp.aliyun.com ntp.ntsc.ac.cn cn.ntp.org.cn; do
 	uci -q del_list system.ntp.server="$s" 2>/dev/null
@@ -19,7 +20,7 @@ for s in ntp.tencent.com ntp.aliyun.com ntp.ntsc.ac.cn cn.ntp.org.cn; do
 done
 uci -q commit system
 
-# ================= Root password: Sakura123 (live router) =================
+# ================= Root password: Sakura123 =================
 HASH='$1$SakuraRT$Rgrt.bFGryGoDE35UJdnk/'
 if [ -f /etc/shadow ]; then
 	sed -i "s|^root:[^:]*:|root:${HASH}:|" /etc/shadow 2>/dev/null || true
@@ -29,12 +30,12 @@ fi
 uci -q set network.lan.ipaddr='192.168.7.1'
 uci -q commit network
 
-# ================= LuCI: zh_cn + design theme (live router) =================
+# ================= LuCI: zh_cn + design theme =================
 uci -q set luci.main.lang='zh_cn'
 uci -q set luci.main.mediaurlbase='/luci-static/design'
 uci -q commit luci
 
-# ================= Wireless (live: Sakura / Sakura-5G, key 1133224455) =================
+# ================= Wireless (Sakura / Sakura-5G, key 1133224455) =================
 if [ -f /etc/config/wireless ]; then
 	for iface in $(uci show wireless 2>/dev/null | grep '=wifi-iface' | cut -d. -f2); do
 		dev=$(uci -q get "wireless.$iface.device")
@@ -62,23 +63,23 @@ if [ -f /etc/config/wireless ]; then
 	uci -q commit wireless
 fi
 
-# ================= Firewall: fullcone + flow offloading (live: turboacc) =================
+# ================= Firewall: fullcone + flow offloading =================
 uci -q set firewall.@defaults[0].flow_offloading='1'
 uci -q set firewall.@defaults[0].fullcone='1'
 uci -q commit firewall
 
-# ================= DHCP: dns redirect like live router =================
+# ================= DHCP: dns redirect =================
 uci -q set dhcp.@dnsmasq[0].dns_redirect='1'
 uci -q commit dhcp
 
-# ================= dropbear: LAN only (live router) =================
+# ================= dropbear: LAN only =================
 uci -q set dropbear.@dropbear[0].Interface='lan'
 uci -q set dropbear.@dropbear[0].PasswordAuth='on'
 uci -q set dropbear.@dropbear[0].RootPasswordAuth='on'
 uci -q set dropbear.@dropbear[0].Port='22'
 uci -q commit dropbear
 
-# ================= UPnP (active on live router) =================
+# ================= UPnP on =================
 uci -q set upnpd.config.enabled='1'
 uci -q set upnpd.config.enable_natpmp='1'
 uci -q set upnpd.config.enable_upnp='1'
@@ -87,36 +88,16 @@ uci -q set upnpd.config.download='20480'
 uci -q set upnpd.config.upload='2048'
 uci -q commit upnpd
 
-# ================= PassWall: enabled + Sakura subscription (live router) =================
-uci -q set passwall.@global[0].enabled='1'
-uci -q set passwall.@global[0].tcp_proxy_mode='chnroute'
-uci -q set passwall.@global[0].udp_proxy_mode='chnroute'
-sid=$(uci add passwall subscribe_list 2>/dev/null)
-if [ -n "$sid" ]; then
-	uci -q set passwall."$sid".remark='Sakura'
-	uci -q set passwall."$sid".url='https://luck.uexi.cn/api/v1/client/subscribe?token=91c6cf9b66e0c82fd4fcf0f2165e06b2'
-	uci -q set passwall."$sid".auto_update='1'
-	uci -q set passwall."$sid".week_update='7'
-	uci -q set passwall."$sid".time_update='4'
-fi
+# ================= PassWall / frpc: installed but OFF =================
+# Deliberately NOT enabled at first boot. Enabling per-customer happens
+# after flashing (setid flow), avoiding proxy-without-node breaking DNS.
+uci -q set passwall.@global[0].enabled='0'
 uci -q commit passwall
+[ -x /etc/init.d/frpc ] && /etc/init.d/frpc disable
+[ -x /etc/init.d/passwall ] && /etc/init.d/passwall disable
 
-# ================= LED: internet LED if present (guarded) =================
-if [ -e /sys/class/leds/blue:net ]; then
-	uci set system.led_internet='led'
-	uci set system.led_internet.name='Internet'
-	uci set system.led_internet.sysfs='blue:net'
-	uci set system.led_internet.trigger='netdev'
-	uci set system.led_internet.dev='br-lan'
-	uci set system.led_internet.mode='link tx rx'
-	uci commit system
-fi
-
-# ================= Enable services =================
-[ -x /etc/init.d/frpc ] && /etc/init.d/frpc enable
+# ================= ttyd + UPnP service: enabled (setup channel) =================
 [ -x /etc/init.d/ttyd ] && /etc/init.d/ttyd enable
 [ -x /etc/init.d/miniupnpd ] && /etc/init.d/miniupnpd enable
-[ -x /etc/init.d/passwall ] && /etc/init.d/passwall enable
-[ -x /etc/init.d/zerotier ] && /etc/init.d/zerotier enable
 
 exit 0
